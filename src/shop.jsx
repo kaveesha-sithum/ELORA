@@ -36,7 +36,7 @@ function Viewer3D({ imgs }) {
 function ProductModal({ p, onClose, onAdd, onBuy }) {
   const [size, setSize] = useState(''), [qty, setQty] = useState(1)
   const item = () => {
-    if (p.sizes?.length && !size) { alert('Size ekak select karanna'); return null }
+    if (p.sizes?.length && !size) { alert('Please select a size'); return null }
     return { id: p.id, size, qty }
   }
   const add = () => { const it = item(); if (it) { onAdd(it); onClose() } }
@@ -61,12 +61,12 @@ function ProductModal({ p, onClose, onAdd, onBuy }) {
 }
 
 /* ---------- cart drawer ---------- */
-function Drawer({ lines, total, onClose, onQty, onRemove, onCheckout }) {
+function Drawer({ lines, total, delivery, onClose, onQty, onRemove, onCheckout }) {
   return (
     <div className="dbg" onClick={onClose}><div className="drawer" onClick={e => e.stopPropagation()}>
       <div className="dh"><h3>My Cart 🛒</h3><button className="x2" onClick={onClose}>✕</button></div>
       <div className="dbody">
-        {lines.length === 0 ? <div className="empty">Cart eka empty 💖</div> : lines.map(l => (
+        {lines.length === 0 ? <div className="empty">Your cart is empty 💖</div> : lines.map(l => (
           <div className="cl" key={l.id + l.size}>
             <img src={imgsOf(l.p)[0]} alt="" />
             <div style={{ flex: 1 }}>
@@ -78,7 +78,10 @@ function Drawer({ lines, total, onClose, onQty, onRemove, onCheckout }) {
             <button className="x2" onClick={() => onRemove(l)}>🗑</button>
           </div>))}
       </div>
-      {lines.length > 0 && <div className="df"><div className="tot"><span>Total</span><b>{money(total)}</b></div>
+      {lines.length > 0 && <div className="df">
+        <div className="tot sm"><span>Subtotal</span><span>{money(total)}</span></div>
+        <div className="tot sm"><span>Delivery</span><span>{money(delivery)}</span></div>
+        <div className="tot"><span>Total</span><b>{money(total + delivery)}</b></div>
         <button className="btn full" onClick={onCheckout}>Checkout</button></div>}
     </div></div>
   )
@@ -86,27 +89,29 @@ function Drawer({ lines, total, onClose, onQty, onRemove, onCheckout }) {
 
 /* ---------- checkout ---------- */
 const blank = { name: '', address: '', phone1: '', phone2: '', town: '', note: '' }
-function Checkout({ lines, total, onClose, onDone }) {
+function Checkout({ lines, total, delivery, onClose, onDone }) {
   const [f, setF] = useState(blank), [busy, setBusy] = useState(false)
   const sending = useRef(false)
   const orderNo = useRef('ELR-' + Date.now().toString().slice(-8) + Math.floor(Math.random() * 90 + 10))
   const set = k => e => setF({ ...f, [k]: e.target.value })
   async function submit() {
     if (sending.current) return
-    if (!f.name.trim() || !f.address.trim() || !f.phone1.trim() || !f.phone2.trim() || !f.town.trim()) return alert('Okkoma fields fill karanna')
+    if (!f.name.trim() || !f.address.trim() || !f.phone1.trim() || !f.phone2.trim() || !f.town.trim()) return alert('Please fill in all required fields')
     sending.current = true; setBusy(true)
     try {
       const items = await Promise.all(lines.map(async l => ({ id: l.id, name: l.p.name, price: Number(l.p.price), size: l.size || '', qty: l.qty, image: await makeThumb(imgsOf(l.p)[0]) })))
-      const order = { orderNo: orderNo.current, name: f.name.trim(), address: f.address.trim(), phone1: f.phone1.trim(), phone2: f.phone2.trim(), town: f.town.trim(), note: f.note.trim(), items, total, status: 'Pending' }
+      const order = { orderNo: orderNo.current, name: f.name.trim(), address: f.address.trim(), phone1: f.phone1.trim(), phone2: f.phone2.trim(), town: f.town.trim(), note: f.note.trim(), items, subtotal: total, delivery, total: total + delivery, status: 'Pending' }
       await setDoc(doc(db, 'orders', order.orderNo), { ...order, createdAt: serverTimestamp() })
       onDone({ ...order, date: new Date().toLocaleString() })
-    } catch (e) { console.error(e); alert('Order eka yawanna beri una. Aye try karanna.'); sending.current = false; setBusy(false) }
+    } catch (e) { console.error(e); alert('Could not place your order. Please try again.'); sending.current = false; setBusy(false) }
   }
   return (
     <div className="modal"><div className="box sheet">
       <h3>Checkout</h3>
       <div className="sum">{lines.map(l => <div key={l.id + l.size}><span>{l.p.name}{l.size && ` (${l.size})`} × {l.qty}</span><span>{money(l.p.price * l.qty)}</span></div>)}
-        <div className="tot"><span>Total</span><b>{money(total)}</b></div></div>
+        <div><span>Subtotal</span><span>{money(total)}</span></div>
+        <div><span>Delivery</span><span>{money(delivery)}</span></div>
+        <div className="tot"><span>Total</span><b>{money(total + delivery)}</b></div></div>
       <label>Full Name *</label><input value={f.name} onChange={set('name')} />
       <label>Address *</label><textarea rows="2" value={f.address} onChange={set('address')} />
       <div className="row">
@@ -128,7 +133,7 @@ function Done({ order, onClose }) {
   return (
     <div className="modal"><div className="box" style={{ textAlign: 'center' }}>
       <h3>🎉 Order Placed!</h3>
-      <p style={{ color: 'var(--mute)', fontSize: 14, marginBottom: 16 }}>Order No: {order.orderNo}. Receipt eka download karala WhatsApp eken ewanna.</p>
+      <p style={{ color: 'var(--mute)', fontSize: 14, marginBottom: 16 }}>Order No: {order.orderNo}. Your receipt has been downloaded. Please send it to us on WhatsApp.</p>
       <button className="btn full" onClick={() => downloadPDF(order)}>⬇ Download Receipt (PDF)</button>
       <button className="btn g full" style={{ marginTop: 10 }} onClick={() => window.open(ownerWA(order), '_blank')}>Send on WhatsApp</button>
       <button className="btn o full" style={{ marginTop: 10 }} onClick={onClose}>Close</button>
@@ -144,7 +149,7 @@ const WING = (
     <path className="vn" d="M-6,-2 C-30,-30 -60,-45 -88,-44 M-6,0 C-35,-14 -65,-20 -98,-34 M-6,2 C-35,10 -70,12 -90,5 M-6,8 C-30,22 -50,38 -68,52 M-6,10 C-25,25 -30,38 -30,50" />
   </>
 )
-// 3D wing flap: wing dekak body eke idan hinge wela rotateY wenawa
+// 3D wing flap: each wing hinges at the body and rotates on the Y axis
 const Butterfly = () => (
   <div className="bfo"><div className="bfly">
     <svg className="wg l" viewBox="0 0 100 140" aria-hidden="true"><g transform="translate(100 70)">{WING}</g></svg>
@@ -178,9 +183,10 @@ function App() {
   const [cart, setCart] = useState(() => { try { return JSON.parse(localStorage.getItem('elora_cart')) || [] } catch { return [] } })
   const [view, setView] = useState(null), [drawer, setDrawer] = useState(false), [checkout, setCheckout] = useState(false)
   const [done, setDone] = useState(null), [toast, setToast] = useState('')
-  const [buy, setBuy] = useState(null), [q, setQ] = useState('')
+  const [buy, setBuy] = useState(null), [q, setQ] = useState(''), [delivery, setDelivery] = useState(450)
 
   useEffect(() => { const t = setTimeout(() => setMinT(true), 1500); return () => clearTimeout(t) }, [])
+  useEffect(() => onSnapshot(doc(db, 'settings', 'shop'), s => { const v = Number(s.data()?.delivery); if (s.exists() && Number.isFinite(v)) setDelivery(v) }, () => {}), [])
   useEffect(() => { try { localStorage.setItem('elora_cart', JSON.stringify(cart)) } catch {} }, [cart])
   useEffect(() => onSnapshot(query(collection(db, 'products'), orderBy('createdAt', 'desc')),
     s => setProducts(s.docs.map(d => ({ id: d.id, ...d.data() }))), e => { console.error(e); setProducts([]) }), [])
@@ -194,7 +200,7 @@ function App() {
 
   function add(it) {
     setCart(c => c.some(x => same(x, it)) ? c.map(x => same(x, it) ? { ...x, qty: x.qty + it.qty } : x) : [...c, it])
-    setToast('Cart ekata add una ✓'); setTimeout(() => setToast(''), 1800)
+    setToast('Added to cart ✓'); setTimeout(() => setToast(''), 1800)
   }
 
   return (
@@ -212,8 +218,8 @@ function App() {
         <h2 className="t">Our Collection</h2>
         <div className="search"><span>🔍</span><input placeholder="Search dresses, tops, sarees…" value={q} onChange={e => setQ(e.target.value)} />{q && <button onClick={() => setQ('')}>✕</button>}</div>
         {products === null ? <div className="empty">Loading…</div> :
-          products.length === 0 ? <div className="empty">Products thama add karala na.</div> :
-          shown.length === 0 ? <div className="empty">"{q}" ekata kisima product ekak hamu une na 🦋</div> :
+          products.length === 0 ? <div className="empty">No products yet.</div> :
+          shown.length === 0 ? <div className="empty">No products found for "{q}" 🦋</div> :
           <div className="grid">{shown.map((p, i) => (
             <div className="card rise" key={p.id} style={{ animationDelay: Math.min(i, 10) * 70 + 'ms' }}>
               <div className="imgw" onClick={() => setView(p)}><img src={imgsOf(p)[0]} alt="" /><span className="tag3d">3D</span></div>
@@ -223,10 +229,10 @@ function App() {
       </div>
       <footer>© ELORA • WhatsApp: 0774071805</footer>
       {view && <ProductModal p={view} onClose={() => setView(null)} onAdd={add} onBuy={it => { setView(null); setBuy(it); setCheckout(true) }} />}
-      {drawer && <Drawer lines={lines} total={total} onClose={() => setDrawer(false)}
+      {drawer && <Drawer lines={lines} total={total} delivery={delivery} onClose={() => setDrawer(false)}
         onQty={(l, d) => setCart(c => c.map(x => same(x, l) ? { ...x, qty: Math.max(1, x.qty + d) } : x))}
         onRemove={l => setCart(c => c.filter(x => !same(x, l)))} onCheckout={() => { setDrawer(false); setCheckout(true) }} />}
-      {checkout && <Checkout lines={chk} total={chkTotal} onClose={() => { setCheckout(false); setBuy(null) }} onDone={o => { setCheckout(false); if (!buy) setCart([]); setBuy(null); setDone(o) }} />}
+      {checkout && <Checkout lines={chk} total={chkTotal} delivery={delivery} onClose={() => { setCheckout(false); setBuy(null) }} onDone={o => { setCheckout(false); if (!buy) setCart([]); setBuy(null); setDone(o) }} />}
       {done && <Done order={done} onClose={() => setDone(null)} />}
       {toast && <div className="toast">{toast}</div>}
     </>
