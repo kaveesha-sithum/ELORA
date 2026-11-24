@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { collection, query, orderBy, onSnapshot, addDoc, setDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore'
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
-import { db, auth, money, imgsOf, itemsOf } from './firebase'
+import { db, auth, money, imgsOf, itemsOf, offerText } from './firebase'
 import { downloadPDF } from './receipt'
 import './style.css'
 
@@ -45,7 +45,8 @@ function Orders() {
           <div className="it" key={i}><img src={it.image} alt="" />
             <div><b>{it.name}</b><br />{it.size && `Size: ${it.size} • `}Qty: {it.qty} • {money(it.price)}</div></div>))}</div>
         {o.note && <><b>Note:</b> {o.note}<br /></>}
-        {o.delivery != null && <><b>Delivery:</b> {money(o.delivery)}<br /></>}
+        {o.discount > 0 && <><b>Discount:</b> - {money(o.discount)}{o.offers?.length ? ` (${o.offers.join(', ')})` : ''}<br /></>}
+        {o.delivery != null && <><b>Delivery:</b> {o.delivery === 0 ? 'FREE' : money(o.delivery)}<br /></>}
         <b>Total:</b> {money(o.total)}<br /><small style={{ color: 'var(--mute)' }}>{date(o)}</small>
         <div className="acts">
           <select value={o.status} onChange={e => updateDoc(doc(db, 'orders', o.id), { status: e.target.value })}>
@@ -77,6 +78,60 @@ function Settings() {
   )
 }
 
+function OfferForm({ o, onClose }) {
+  const [f, setF] = useState(o || { type: 'freeDelivery', minQty: 5, minTotal: '', percent: 10, title: '', active: true })
+  const set = k => e => setF({ ...f, [k]: e.target.value })
+  const [busy, setBusy] = useState(false), lock = useRef(false), newId = useRef(doc(collection(db, 'offers')).id)
+  async function save() {
+    if (lock.current) return
+    const data = { type: f.type, minQty: Number(f.minQty) || 0, minTotal: Number(f.minTotal) || 0, percent: f.type === 'percent' ? Number(f.percent) || 0 : 0, title: (f.title || '').trim(), active: f.active !== false }
+    if (f.type === 'percent' && !(data.percent >= 1 && data.percent <= 90)) return alert('Enter a discount between 1% and 90%')
+    lock.current = true; setBusy(true)   // double-click guard
+    try {
+      if (o?.id) await updateDoc(doc(db, 'offers', o.id), data)
+      else await setDoc(doc(db, 'offers', newId.current), { ...data, createdAt: serverTimestamp() }) // same ID = never duplicates
+      onClose()
+    } catch (e) { console.error(e); lock.current = false; setBusy(false); alert('Could not save. Please check your Firestore rules for "offers".') }
+  }
+  return (
+    <div className="modal"><div className="box">
+      <h3>{o?.id ? 'Edit' : 'New'} Offer</h3>
+      <label>Offer type</label>
+      <select value={f.type} onChange={set('type')}><option value="freeDelivery">Free delivery</option><option value="percent">Percentage discount</option></select>
+      {f.type === 'percent' && <><label>Discount (%)</label><input type="number" min="1" max="90" value={f.percent} onChange={set('percent')} /></>}
+      <label>Minimum number of items (leave empty for none)</label><input type="number" min="0" value={f.minQty} onChange={set('minQty')} placeholder="e.g. 5" />
+      <label>Minimum order amount in Rs. (leave empty for none)</label><input type="number" min="0" value={f.minTotal} onChange={set('minTotal')} placeholder="e.g. 5000" />
+      <label>Custom title (optional)</label><input value={f.title} onChange={set('title')} placeholder="e.g. Buy 5 dresses, get free delivery!" />
+      <label>Status</label>
+      <select value={f.active === false ? 'off' : 'on'} onChange={e => setF({ ...f, active: e.target.value === 'on' })}><option value="on">Active</option><option value="off">Paused</option></select>
+      <p style={{ fontSize: 12, color: '#7a5a60', marginTop: 10 }}>Preview: {f.title.trim() || offerText({ ...f, minQty: Number(f.minQty) || 0, minTotal: Number(f.minTotal) || 0, percent: Number(f.percent) || 0 })}</p>
+      <div className="row" style={{ marginTop: 16 }}><button className="btn o" onClick={onClose}>Cancel</button><button className="btn" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</button></div>
+    </div></div>
+  )
+}
+
+function Offers() {
+  const list = useList('offers'), [edit, setEdit] = useState(null)
+  return (
+    <>
+      <button className="btn" onClick={() => setEdit({})}>+ Add New Offer</button>
+      <div style={{ marginTop: 18 }}>
+        {list.length === 0 && <div className="empty">No offers yet. Example: 5 items or more = free delivery.</div>}
+        {list.map(o => (
+          <div className="ord" key={o.id}><div className="i">
+            <b>{o.title || offerText(o)}</b> <span className="badge">{o.active === false ? 'Paused' : 'Active'}</span><br />
+            <small style={{ color: '#7a5a60' }}>{o.title ? offerText(o) : ''}</small>
+            <div className="acts">
+              <button className="btn s" onClick={() => setEdit(o)}>Edit</button>
+              <button className="btn o s" onClick={() => updateDoc(doc(db, 'offers', o.id), { active: o.active === false })}>{o.active === false ? 'Activate' : 'Pause'}</button>
+              <button className="btn r s" onClick={() => confirm('Delete this offer?') && deleteDoc(doc(db, 'offers', o.id))}>Delete</button>
+            </div></div></div>))}
+      </div>
+      {edit && <OfferForm o={edit.id ? edit : null} onClose={() => setEdit(null)} />}
+    </>
+  )
+}
+
 function ProductForm({ p, onClose }) {
   const [f, setF] = useState(p || { name: '', price: '', desc: '', image: '' })
   const set = k => e => setF({ ...f, [k]: e.target.value })
@@ -100,12 +155,17 @@ function ProductForm({ p, onClose }) {
     })
     e.target.value = ''
   }
+  const [busy, setBusy] = useState(false), lock = useRef(false), newId = useRef(doc(collection(db, 'products')).id)
   async function save() {
+    if (lock.current) return
     if (!f.name.trim() || !Number(f.price) || !imgs.length) return alert('Name, price and at least one photo are required')
     const data = { name: f.name.trim(), price: Number(f.price), desc: f.desc || '', image: imgs[0], images: imgs, sizes: sz.split(',').map(x => x.trim()).filter(Boolean) }
-    if (p?.id) await updateDoc(doc(db, 'products', p.id), data)
-    else await addDoc(collection(db, 'products'), { ...data, createdAt: serverTimestamp() })
-    onClose()
+    lock.current = true; setBusy(true)   // double-click guard
+    try {
+      if (p?.id) await updateDoc(doc(db, 'products', p.id), data)
+      else await setDoc(doc(db, 'products', newId.current), { ...data, createdAt: serverTimestamp() })
+      onClose()
+    } catch (e) { console.error(e); lock.current = false; setBusy(false); alert('Could not save the product. Please try again.') }
   }
   return (
     <div className="modal"><div className="box">
@@ -120,7 +180,7 @@ function ProductForm({ p, onClose }) {
       <div className="chips" style={{ marginTop: 8 }}>{imgs.map((x, i) => (
         <div key={i} style={{ position: 'relative' }}><img src={x} style={{ width: 70, height: 92, objectFit: 'cover', borderRadius: 8 }} />
           <button type="button" className="x2" style={{ position: 'absolute', top: -6, right: -6, background: '#c0213a', borderRadius: '50%', width: 22, height: 22, fontSize: 11 }} onClick={() => setImgs(imgs.filter((_, j) => j !== i))}>✕</button></div>))}</div>
-      <div className="row" style={{ marginTop: 18 }}><button className="btn o" onClick={onClose}>Cancel</button><button className="btn" onClick={save}>Save</button></div>
+      <div className="row" style={{ marginTop: 18 }}><button className="btn o" onClick={onClose}>Cancel</button><button className="btn" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</button></div>
     </div></div>
   )
 }
@@ -154,9 +214,10 @@ function App() {
           <div className="tabs">
             <button className={tab === 'O' ? 'on' : ''} onClick={() => setTab('O')}>📦 Orders</button>
             <button className={tab === 'P' ? 'on' : ''} onClick={() => setTab('P')}>👗 Products</button>
+            <button className={tab === 'F' ? 'on' : ''} onClick={() => setTab('F')}>🎁 Offers</button>
             <button className={tab === 'S' ? 'on' : ''} onClick={() => setTab('S')}>⚙️ Settings</button>
           </div>
-          {tab === 'O' ? <Orders /> : tab === 'P' ? <Products /> : <Settings />}
+          {tab === 'O' ? <Orders /> : tab === 'P' ? <Products /> : tab === 'F' ? <Offers /> : <Settings />}
         </>}
       </div>
     </>
