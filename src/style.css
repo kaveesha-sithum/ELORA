@@ -182,3 +182,12 @@ label,.sz,.v3dctl{color:#7a5a60}
 .x{background:#fbf3f1;color:#2b1c20;border-color:#dcc3c0}
 .box .empty,.drawer .empty{color:#7a5a60}
 .tot.sm{font-size:14px;margin-bottom:6px;color:#7a5a60}
+
+/* ===== offers ===== */
+.offers{background:linear-gradient(90deg,#ff8fa6,#ffc2cf,#ff8fa6);color:#2b0f17;overflow:hidden;white-space:nowrap;font:500 13px Poppins}
+.mq{display:inline-block;padding:8px 0;animation:mq 30s linear infinite}
+.mqh span{margin:0 34px}
+@keyframes mq{to{transform:translateX(-50%)}}
+.hint{background:#fde3e8;color:#8a2338;border-radius:10px;padding:8px 10px;font-size:12.5px;margin-bottom:8px}
+.applied{background:#dff3e3;color:#1e6b34;border-radius:10px;padding:6px 10px;font-size:12.5px;margin-bottom:8px}
+@media(prefers-reduced-motion:reduce){.mq{animation:none}}
