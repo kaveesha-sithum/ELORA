@@ -134,8 +134,8 @@ footer{text-align:center;color:var(--mute);font-size:13px;padding:30px;border-to
 .bfo{width:100%;filter:drop-shadow(0 0 10px rgba(255,143,166,.7)) drop-shadow(0 0 28px rgba(255,107,176,.35))}
 .bfly{position:relative;width:100%;aspect-ratio:200/140;perspective:650px}
 .wg{position:absolute;top:0;width:50%;height:100%;overflow:visible}
-.wg.l{left:0;transform-origin:100% 50%;animation:flapL 1.2s ease-in-out infinite}
-.wg.r{right:0;transform-origin:0 50%;animation:flapR 1.2s ease-in-out infinite}
+.wg.l{left:0;transform-origin:100% 50%;animation:flapL .6s ease-in-out infinite}
+.wg.r{right:0;transform-origin:0 50%;animation:flapR .6s ease-in-out infinite}
 @keyframes flapL{0%,100%{transform:rotateY(0)}50%{transform:rotateY(62deg)}}
 @keyframes flapR{0%,100%{transform:rotateY(0)}50%{transform:rotateY(-62deg)}}
 .bd{position:absolute;left:40%;width:20%;top:0;height:100%;overflow:visible}
@@ -143,7 +143,7 @@ footer{text-align:center;color:var(--mute);font-size:13px;padding:30px;border-to
 .bfo .vn{fill:none;stroke:rgba(255,200,225,.55);stroke-width:.8;stroke-linecap:round}
 .bfo .body{fill:#ffd1e6;stroke:#fff;stroke-width:.5}
 .bf .bfo{filter:drop-shadow(0 0 6px rgba(255,143,166,.7))}
-.bf .wg{animation-duration:.8s}
+.bf .wg{animation-duration:.45s}
 @media(prefers-reduced-motion:reduce){.wg{animation:none}}
 
 /* ===== THEME: black + blush pink (reference photo) ===== */
@@ -181,3 +181,4 @@ label,.sz,.v3dctl{color:#7a5a60}
 .v3dctl{color:var(--mute)}.v3dctl button{background:#1a1114;color:#fff}
 .x{background:#fbf3f1;color:#2b1c20;border-color:#dcc3c0}
 .box .empty,.drawer .empty{color:#7a5a60}
+.tot.sm{font-size:14px;margin-bottom:6px;color:#7a5a60}
