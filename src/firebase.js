@@ -31,3 +31,30 @@ export const makeThumb = (src, s = 180) => new Promise(r => {
   im.onerror = () => r('')
   im.src = src
 })
+
+// ---- offers ----
+export function offerText(o) {
+  const c = []
+  if (o.minQty) c.push(`buy ${o.minQty} or more items`)
+  if (o.minTotal) c.push(`spend Rs. ${Number(o.minTotal).toLocaleString('en-LK')} or more`)
+  const benefit = o.type === 'freeDelivery' ? 'FREE delivery' : `${o.percent}% OFF`
+  return c.length ? `${benefit} when you ${c.join(' and ')}` : `${benefit} on every order`
+}
+export function calcOffers(offers, qty, sub, base) {
+  const act = offers.filter(o => o.active !== false)
+  const met = o => qty >= (o.minQty || 0) && sub >= (o.minTotal || 0)
+  const name = o => o.title || offerText(o)
+  const fdMet = act.find(o => o.type === 'freeDelivery' && met(o))
+  let best = null
+  act.forEach(o => { if (o.type === 'percent' && met(o) && (!best || o.percent > best.percent)) best = o })
+  const applied = [], discount = best ? Math.round(sub * best.percent / 100) : 0
+  if (fdMet) applied.push(name(fdMet)); if (best) applied.push(name(best))
+  const hints = qty <= 0 ? [] : act.filter(o => !met(o) && !(o.type === 'freeDelivery' && fdMet) && !(o.type === 'percent' && best && best.percent >= o.percent)).slice(0, 2).map(o => {
+    const p = []
+    if (o.minQty && qty < o.minQty) p.push(`add ${o.minQty - qty} more item${o.minQty - qty > 1 ? 's' : ''}`)
+    if (o.minTotal && sub < o.minTotal) p.push(`spend Rs. ${(o.minTotal - sub).toLocaleString('en-LK')} more`)
+    const t = p.join(' and ')
+    return `${t[0].toUpperCase() + t.slice(1)} to get ${o.type === 'freeDelivery' ? 'FREE delivery' : o.percent + '% OFF'}!`
+  })
+  return { delivery: fdMet ? 0 : base, discount, applied, hints }
+}
