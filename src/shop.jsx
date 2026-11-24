@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { collection, query, orderBy, onSnapshot, doc, setDoc, serverTimestamp } from 'firebase/firestore'
-import { db, money, imgsOf, makeThumb } from './firebase'
+import { db, money, imgsOf, makeThumb, calcOffers, offerText } from './firebase'
 import { downloadPDF, ownerWA } from './receipt'
 import './style.css'
 
@@ -61,7 +61,7 @@ function ProductModal({ p, onClose, onAdd, onBuy }) {
 }
 
 /* ---------- cart drawer ---------- */
-function Drawer({ lines, total, delivery, onClose, onQty, onRemove, onCheckout }) {
+function Drawer({ lines, total, off, onClose, onQty, onRemove, onCheckout }) {
   return (
     <div className="dbg" onClick={onClose}><div className="drawer" onClick={e => e.stopPropagation()}>
       <div className="dh"><h3>My Cart 🛒</h3><button className="x2" onClick={onClose}>✕</button></div>
@@ -79,9 +79,12 @@ function Drawer({ lines, total, delivery, onClose, onQty, onRemove, onCheckout }
           </div>))}
       </div>
       {lines.length > 0 && <div className="df">
+        {off.hints.map((h, i) => <div className="hint" key={i}>🎁 {h}</div>)}
+        {off.applied.map((a, i) => <div className="applied" key={i}>✓ {a}</div>)}
         <div className="tot sm"><span>Subtotal</span><span>{money(total)}</span></div>
-        <div className="tot sm"><span>Delivery</span><span>{money(delivery)}</span></div>
-        <div className="tot"><span>Total</span><b>{money(total + delivery)}</b></div>
+        {off.discount > 0 && <div className="tot sm"><span>Discount</span><span>- {money(off.discount)}</span></div>}
+        <div className="tot sm"><span>Delivery</span><span>{off.delivery === 0 ? 'FREE' : money(off.delivery)}</span></div>
+        <div className="tot"><span>Total</span><b>{money(total - off.discount + off.delivery)}</b></div>
         <button className="btn full" onClick={onCheckout}>Checkout</button></div>}
     </div></div>
   )
@@ -89,7 +92,7 @@ function Drawer({ lines, total, delivery, onClose, onQty, onRemove, onCheckout }
 
 /* ---------- checkout ---------- */
 const blank = { name: '', address: '', phone1: '', phone2: '', town: '', note: '' }
-function Checkout({ lines, total, delivery, onClose, onDone }) {
+function Checkout({ lines, total, off, onClose, onDone }) {
   const [f, setF] = useState(blank), [busy, setBusy] = useState(false)
   const sending = useRef(false)
   const orderNo = useRef('ELR-' + Date.now().toString().slice(-8) + Math.floor(Math.random() * 90 + 10))
@@ -100,7 +103,7 @@ function Checkout({ lines, total, delivery, onClose, onDone }) {
     sending.current = true; setBusy(true)
     try {
       const items = await Promise.all(lines.map(async l => ({ id: l.id, name: l.p.name, price: Number(l.p.price), size: l.size || '', qty: l.qty, image: await makeThumb(imgsOf(l.p)[0]) })))
-      const order = { orderNo: orderNo.current, name: f.name.trim(), address: f.address.trim(), phone1: f.phone1.trim(), phone2: f.phone2.trim(), town: f.town.trim(), note: f.note.trim(), items, subtotal: total, delivery, total: total + delivery, status: 'Pending' }
+      const order = { orderNo: orderNo.current, name: f.name.trim(), address: f.address.trim(), phone1: f.phone1.trim(), phone2: f.phone2.trim(), town: f.town.trim(), note: f.note.trim(), items, subtotal: total, discount: off.discount, offers: off.applied, delivery: off.delivery, total: total - off.discount + off.delivery, status: 'Pending' }
       await setDoc(doc(db, 'orders', order.orderNo), { ...order, createdAt: serverTimestamp() })
       onDone({ ...order, date: new Date().toLocaleString() })
     } catch (e) { console.error(e); alert('Could not place your order. Please try again.'); sending.current = false; setBusy(false) }
@@ -110,8 +113,9 @@ function Checkout({ lines, total, delivery, onClose, onDone }) {
       <h3>Checkout</h3>
       <div className="sum">{lines.map(l => <div key={l.id + l.size}><span>{l.p.name}{l.size && ` (${l.size})`} × {l.qty}</span><span>{money(l.p.price * l.qty)}</span></div>)}
         <div><span>Subtotal</span><span>{money(total)}</span></div>
-        <div><span>Delivery</span><span>{money(delivery)}</span></div>
-        <div className="tot"><span>Total</span><b>{money(total + delivery)}</b></div></div>
+        {off.discount > 0 && <div><span>Discount</span><span>- {money(off.discount)}</span></div>}
+        <div><span>Delivery</span><span>{off.delivery === 0 ? 'FREE 🎉' : money(off.delivery)}</span></div>
+        <div className="tot"><span>Total</span><b>{money(total - off.discount + off.delivery)}</b></div></div>
       <label>Full Name *</label><input value={f.name} onChange={set('name')} />
       <label>Address *</label><textarea rows="2" value={f.address} onChange={set('address')} />
       <div className="row">
@@ -177,16 +181,26 @@ const Butterflies = () => (
     <span key={i} className="bf" style={{ left: b.l + '%', '--d': b.d + 's', '--t': b.t + 's', '--s': b.s + 'px', '--x': b.x + 'px' }}><Butterfly /></span>))}</div>
 )
 
+/* ---------- offers banner ---------- */
+function OfferBar({ offers }) {
+  const act = offers.filter(o => o.active !== false)
+  if (!act.length) return null
+  const row = Array(4).fill(act.map(o => o.title || offerText(o))).flat()
+  const half = <span className="mqh">{row.map((t, i) => <span key={i}>🎁 {t}</span>)}</span>
+  return <div className="offers"><div className="mq">{half}{half}</div></div>
+}
+
 /* ---------- app ---------- */
 function App() {
   const [products, setProducts] = useState(null), [minT, setMinT] = useState(false)
   const [cart, setCart] = useState(() => { try { return JSON.parse(localStorage.getItem('elora_cart')) || [] } catch { return [] } })
   const [view, setView] = useState(null), [drawer, setDrawer] = useState(false), [checkout, setCheckout] = useState(false)
   const [done, setDone] = useState(null), [toast, setToast] = useState('')
-  const [buy, setBuy] = useState(null), [q, setQ] = useState(''), [delivery, setDelivery] = useState(450)
+  const [buy, setBuy] = useState(null), [q, setQ] = useState(''), [delivery, setDelivery] = useState(450), [offers, setOffers] = useState([])
 
   useEffect(() => { const t = setTimeout(() => setMinT(true), 1500); return () => clearTimeout(t) }, [])
   useEffect(() => onSnapshot(doc(db, 'settings', 'shop'), s => { const v = Number(s.data()?.delivery); if (s.exists() && Number.isFinite(v)) setDelivery(v) }, () => {}), [])
+  useEffect(() => onSnapshot(collection(db, 'offers'), s => setOffers(s.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}), [])
   useEffect(() => { try { localStorage.setItem('elora_cart', JSON.stringify(cart)) } catch {} }, [cart])
   useEffect(() => onSnapshot(query(collection(db, 'products'), orderBy('createdAt', 'desc')),
     s => setProducts(s.docs.map(d => ({ id: d.id, ...d.data() }))), e => { console.error(e); setProducts([]) }), [])
@@ -195,6 +209,8 @@ function App() {
   const total = lines.reduce((s, l) => s + l.p.price * l.qty, 0), count = lines.reduce((s, l) => s + l.qty, 0)
   const chk = buy ? [{ ...buy, p: (products || []).find(x => x.id === buy.id) }].filter(l => l.p) : lines
   const chkTotal = chk.reduce((s, l) => s + l.p.price * l.qty, 0)
+  const dOff = calcOffers(offers, count, total, delivery)
+  const cOff = calcOffers(offers, chk.reduce((s, l) => s + l.qty, 0), chkTotal, delivery)
   const shown = (products || []).filter(p => (p.name + ' ' + (p.desc || '')).toLowerCase().includes(q.trim().toLowerCase()))
   const same = (a, b) => a.id === b.id && a.size === b.size
 
@@ -212,6 +228,7 @@ function App() {
         <a href="/" className="logo"><img src="/logo.jpeg" alt="" onError={e => e.target.style.display = 'none'} />E<span>L</span>ORA</a>
         <button className="cartbtn" onClick={() => setDrawer(true)}>🛒{count > 0 && <i>{count}</i>}</button>
       </header>
+      <OfferBar offers={offers} />
       <Bg /><Butterflies />
       <div className="hero"><div className="herob"><Butterfly /></div><h1>Be Your Own <em>Queen</em></h1><p>ELORA – Elegant fashion for every moment ✨</p></div>
       <div className="wrap">
@@ -229,10 +246,10 @@ function App() {
       </div>
       <footer>© ELORA • WhatsApp: 0774071805</footer>
       {view && <ProductModal p={view} onClose={() => setView(null)} onAdd={add} onBuy={it => { setView(null); setBuy(it); setCheckout(true) }} />}
-      {drawer && <Drawer lines={lines} total={total} delivery={delivery} onClose={() => setDrawer(false)}
+      {drawer && <Drawer lines={lines} total={total} off={dOff} onClose={() => setDrawer(false)}
         onQty={(l, d) => setCart(c => c.map(x => same(x, l) ? { ...x, qty: Math.max(1, x.qty + d) } : x))}
         onRemove={l => setCart(c => c.filter(x => !same(x, l)))} onCheckout={() => { setDrawer(false); setCheckout(true) }} />}
-      {checkout && <Checkout lines={chk} total={chkTotal} delivery={delivery} onClose={() => { setCheckout(false); setBuy(null) }} onDone={o => { setCheckout(false); if (!buy) setCart([]); setBuy(null); setDone(o) }} />}
+      {checkout && <Checkout lines={chk} total={chkTotal} off={cOff} onClose={() => { setCheckout(false); setBuy(null) }} onDone={o => { setCheckout(false); if (!buy) setCart([]); setBuy(null); setDone(o) }} />}
       {done && <Done order={done} onClose={() => setDone(null)} />}
       {toast && <div className="toast">{toast}</div>}
     </>
