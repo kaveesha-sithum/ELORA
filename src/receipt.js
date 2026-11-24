@@ -25,7 +25,8 @@ export function buildPDF(o) {
   const sub = o.subtotal ?? items.reduce((t, it) => t + it.price * it.qty, 0)
   d.setFontSize(11); d.setFont('helvetica', 'normal')
   d.text('Subtotal: ' + money(sub), 196, y, { align: 'right' }); y += 8
-  if (o.delivery != null) { d.text('Delivery: ' + money(o.delivery), 196, y, { align: 'right' }); y += 10 }
+  if (o.discount > 0) { d.text('Discount' + (o.offers?.length ? ' (' + o.offers.join(', ') + ')' : '') + ': - ' + money(o.discount), 196, y, { align: 'right', maxWidth: 170 }); y += 8 }
+  if (o.delivery != null) { d.text('Delivery: ' + (o.delivery === 0 ? 'FREE' : money(o.delivery)), 196, y, { align: 'right' }); y += 10 }
   d.setFontSize(14); d.setTextColor(184, 58, 85); d.setFont('helvetica', 'bold'); d.text('TOTAL: ' + money(o.total), 196, y, { align: 'right' })
   d.setTextColor(120); d.setFontSize(10); d.setFont('helvetica', 'normal')
   d.text('Thank you for shopping with ELORA!  WhatsApp: 0774071805', 105, 285, { align: 'center' })
@@ -36,6 +37,6 @@ export const downloadPDF = o => buildPDF(o).save(`ELORA-${o.orderNo}.pdf`)
 export function ownerWA(o) {
   const sub = o.subtotal ?? itemsOf(o).reduce((t, it) => t + it.price * it.qty, 0)
   const list = itemsOf(o).map((it, i) => `${i + 1}. ${it.name}${it.size ? ' (Size ' + it.size + ')' : ''} × ${it.qty} = ${money(it.price * it.qty)}`).join('\n')
-  const m = `🛍️ *ELORA – New Order*\n*Order No:* ${o.orderNo}\n*Date:* ${o.date}\n\n*Name:* ${o.name}\n*Address:* ${o.address}\n*Phone 1:* ${o.phone1}\n*Phone 2:* ${o.phone2}\n*Nearest Town:* ${o.town}${o.note ? '\n*Note:* ' + o.note : ''}\n\n*Items:*\n${list}\n\n*Subtotal:* ${money(sub)}${o.delivery != null ? '\n*Delivery:* ' + money(o.delivery) : ''}\n*Total:* ${money(o.total)}\n\n(Receipt PDF attached)`
+  const m = `🛍️ *ELORA – New Order*\n*Order No:* ${o.orderNo}\n*Date:* ${o.date}\n\n*Name:* ${o.name}\n*Address:* ${o.address}\n*Phone 1:* ${o.phone1}\n*Phone 2:* ${o.phone2}\n*Nearest Town:* ${o.town}${o.note ? '\n*Note:* ' + o.note : ''}\n\n*Items:*\n${list}\n\n*Subtotal:* ${money(sub)}${o.discount > 0 ? '\n*Discount:* - ' + money(o.discount) : ''}${o.delivery != null ? '\n*Delivery:* ' + (o.delivery === 0 ? 'FREE' : money(o.delivery)) : ''}\n*Total:* ${money(o.total)}\n\n(Receipt PDF attached)`
   return `https://wa.me/${WA}?text=${encodeURIComponent(m)}`
 }
