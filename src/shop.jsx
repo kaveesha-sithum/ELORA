@@ -5,6 +5,9 @@ import { db, money, imgsOf, makeThumb, calcOffers, offerText } from './firebase'
 import { downloadPDF, ownerWA } from './receipt'
 import './style.css'
 
+const readCache = k => { try { return JSON.parse(localStorage.getItem(k)) } catch { return null } }
+const writeCache = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
+
 /* ---------- 3D viewer (drag / swipe to rotate) ---------- */
 function Viewer3D({ imgs }) {
   const n = imgs.length, step = n >= 2 ? 360 / n : 0, k = n >= 3 ? 0.5 / Math.tan(Math.PI / n) : 0
@@ -61,7 +64,7 @@ function ProductModal({ p, onClose, onAdd, onBuy }) {
 }
 
 /* ---------- cart drawer ---------- */
-function Drawer({ lines, total, off, onClose, onQty, onRemove, onCheckout }) {
+function Drawer({ lines, total, off, ready, onClose, onQty, onRemove, onCheckout }) {
   return (
     <div className="dbg" onClick={onClose}><div className="drawer" onClick={e => e.stopPropagation()}>
       <div className="dh"><h3>My Cart 🛒</h3><button className="x2" onClick={onClose}>✕</button></div>
@@ -83,22 +86,22 @@ function Drawer({ lines, total, off, onClose, onQty, onRemove, onCheckout }) {
         {off.applied.map((a, i) => <div className="applied" key={i}>✓ {a}</div>)}
         <div className="tot sm"><span>Subtotal</span><span>{money(total)}</span></div>
         {off.discount > 0 && <div className="tot sm"><span>Discount</span><span>- {money(off.discount)}</span></div>}
-        <div className="tot sm"><span>Delivery</span><span>{off.delivery === 0 ? 'FREE' : money(off.delivery)}</span></div>
-        <div className="tot"><span>Total</span><b>{money(total - off.discount + off.delivery)}</b></div>
-        <button className="btn full" onClick={onCheckout}>Checkout</button></div>}
+        <div className="tot sm"><span>Delivery</span><span>{!ready ? '…' : off.delivery === 0 ? 'FREE' : money(off.delivery)}</span></div>
+        <div className="tot"><span>Total</span><b>{ready ? money(total - off.discount + off.delivery) : '…'}</b></div>
+        <button className="btn full" disabled={!ready} onClick={onCheckout}>Checkout</button></div>}
     </div></div>
   )
 }
 
 /* ---------- checkout ---------- */
 const blank = { name: '', address: '', phone1: '', phone2: '', town: '', note: '' }
-function Checkout({ lines, total, off, onClose, onDone }) {
+function Checkout({ lines, total, off, ready, onClose, onDone }) {
   const [f, setF] = useState(blank), [busy, setBusy] = useState(false)
   const sending = useRef(false)
   const orderNo = useRef('ELR-' + Date.now().toString().slice(-8) + Math.floor(Math.random() * 90 + 10))
   const set = k => e => setF({ ...f, [k]: e.target.value })
   async function submit() {
-    if (sending.current) return
+    if (sending.current || !ready) return
     if (!f.name.trim() || !f.address.trim() || !f.phone1.trim() || !f.phone2.trim() || !f.town.trim()) return alert('Please fill in all required fields')
     sending.current = true; setBusy(true)
     try {
@@ -114,8 +117,8 @@ function Checkout({ lines, total, off, onClose, onDone }) {
       <div className="sum">{lines.map(l => <div key={l.id + l.size}><span>{l.p.name}{l.size && ` (${l.size})`} × {l.qty}</span><span>{money(l.p.price * l.qty)}</span></div>)}
         <div><span>Subtotal</span><span>{money(total)}</span></div>
         {off.discount > 0 && <div><span>Discount</span><span>- {money(off.discount)}</span></div>}
-        <div><span>Delivery</span><span>{off.delivery === 0 ? 'FREE 🎉' : money(off.delivery)}</span></div>
-        <div className="tot"><span>Total</span><b>{money(total - off.discount + off.delivery)}</b></div></div>
+        <div><span>Delivery</span><span>{!ready ? '…' : off.delivery === 0 ? 'FREE 🎉' : money(off.delivery)}</span></div>
+        <div className="tot"><span>Total</span><b>{ready ? money(total - off.discount + off.delivery) : '…'}</b></div></div>
       <label>Full Name *</label><input value={f.name} onChange={set('name')} />
       <label>Address *</label><textarea rows="2" value={f.address} onChange={set('address')} />
       <div className="row">
@@ -126,7 +129,7 @@ function Checkout({ lines, total, off, onClose, onDone }) {
       <label>Notes (optional)</label><input value={f.note} onChange={set('note')} />
       <div className="row" style={{ marginTop: 18 }}>
         <button className="btn o" onClick={onClose}>Back</button>
-        <button className="btn" disabled={busy} onClick={submit}>{busy ? 'Please wait…' : 'Confirm Order'}</button>
+        <button className="btn" disabled={busy || !ready} onClick={submit}>{busy ? 'Please wait…' : 'Confirm Order'}</button>
       </div>
     </div></div>
   )
@@ -181,6 +184,16 @@ const Butterflies = () => (
     <span key={i} className="bf" style={{ left: b.l + '%', '--d': b.d + 's', '--t': b.t + 's', '--s': b.s + 'px', '--x': b.x + 'px' }}><Butterfly /></span>))}</div>
 )
 
+/* ---------- category / gender filter chips ---------- */
+const ICONS = [[/shoe|sandal|heel|slipper|boot|sneaker/i, '👟'], [/perfume|scent|fragrance|cologne|attar/i, '🧴'], [/belt/i, '🪢'], [/dress|frock|gown/i, '👗'], [/top|shirt|blouse|tee/i, '👚'], [/bag|purse|handbag/i, '👜'], [/watch/i, '⌚'], [/jewel|ring|necklace|earring|bracelet/i, '💍'], [/sunglass|glass/i, '🕶️'], [/cap|hat/i, '🧢'], [/saree|sari/i, '🥻'], [/pant|trouser|jean|short/i, '👖'], [/access/i, '✨']]
+const iconOf = n => (ICONS.find(([r]) => r.test(n)) || [0, '🛍️'])[1]
+const Chips = ({ items, value, onPick, cls = '' }) => (
+  <div className={'fbar ' + cls}>{items.map((c, i) => (
+    <button key={c.key} className={'fchip' + (value === c.key ? ' on' : '')} style={{ '--i': i }} onClick={() => onPick(c.key)}>
+      <span className="ic">{c.icon}</span><span>{c.label}</span>
+    </button>))}</div>
+)
+
 /* ---------- offers banner ---------- */
 function OfferBar({ offers }) {
   const act = offers.filter(o => o.active !== false)
@@ -196,22 +209,29 @@ function App() {
   const [cart, setCart] = useState(() => { try { return JSON.parse(localStorage.getItem('elora_cart')) || [] } catch { return [] } })
   const [view, setView] = useState(null), [drawer, setDrawer] = useState(false), [checkout, setCheckout] = useState(false)
   const [done, setDone] = useState(null), [toast, setToast] = useState('')
-  const [buy, setBuy] = useState(null), [q, setQ] = useState(''), [delivery, setDelivery] = useState(450), [offers, setOffers] = useState([])
+  const [buy, setBuy] = useState(null), [q, setQ] = useState(''), [delivery, setDelivery] = useState(() => readCache('elora_delivery')), [offers, setOffers] = useState(() => readCache('elora_offers'))
+  const [cats, setCats] = useState([]), [gender, setGender] = useState('All'), [cat, setCat] = useState('All')
 
   useEffect(() => { const t = setTimeout(() => setMinT(true), 1500); return () => clearTimeout(t) }, [])
-  useEffect(() => onSnapshot(doc(db, 'settings', 'shop'), s => { const v = Number(s.data()?.delivery); if (s.exists() && Number.isFinite(v)) setDelivery(v) }, () => {}), [])
-  useEffect(() => onSnapshot(collection(db, 'offers'), s => setOffers(s.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}), [])
+  useEffect(() => onSnapshot(doc(db, 'settings', 'shop'), s => { const v = Number(s.data()?.delivery); const d = s.exists() && Number.isFinite(v) ? v : 450; setDelivery(d); writeCache('elora_delivery', d) }, () => setDelivery(d => d ?? 450)), [])
+  useEffect(() => onSnapshot(collection(db, 'offers'), s => { const l = s.docs.map(d => { const { createdAt, ...r } = d.data(); return { id: d.id, ...r } }); setOffers(l); writeCache('elora_offers', l) }, () => setOffers(o => o ?? [])), [])
+  useEffect(() => onSnapshot(collection(db, 'categories'), s => setCats(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0))), () => {}), [])
   useEffect(() => { try { localStorage.setItem('elora_cart', JSON.stringify(cart)) } catch {} }, [cart])
   useEffect(() => onSnapshot(query(collection(db, 'products'), orderBy('createdAt', 'desc')),
     s => setProducts(s.docs.map(d => ({ id: d.id, ...d.data() }))), e => { console.error(e); setProducts([]) }), [])
 
+  const ready = delivery !== null && offers !== null
+  const offs = offers || [], dlv = delivery ?? 450
   const lines = cart.map(c => ({ ...c, p: (products || []).find(x => x.id === c.id) })).filter(l => l.p)
   const total = lines.reduce((s, l) => s + l.p.price * l.qty, 0), count = lines.reduce((s, l) => s + l.qty, 0)
   const chk = buy ? [{ ...buy, p: (products || []).find(x => x.id === buy.id) }].filter(l => l.p) : lines
   const chkTotal = chk.reduce((s, l) => s + l.p.price * l.qty, 0)
-  const dOff = calcOffers(offers, count, total, delivery)
-  const cOff = calcOffers(offers, chk.reduce((s, l) => s + l.qty, 0), chkTotal, delivery)
-  const shown = (products || []).filter(p => (p.name + ' ' + (p.desc || '')).toLowerCase().includes(q.trim().toLowerCase()))
+  const dOff = calcOffers(offs, count, total, dlv)
+  const cOff = calcOffers(offs, chk.reduce((s, l) => s + l.qty, 0), chkTotal, dlv)
+  const shown = (products || []).filter(p =>
+    (p.name + ' ' + (p.desc || '')).toLowerCase().includes(q.trim().toLowerCase()) &&
+    (cat === 'All' || p.category === cat) &&
+    (gender === 'All' || (p.gender || 'Unisex') === gender || (p.gender || 'Unisex') === 'Unisex'))
   const same = (a, b) => a.id === b.id && a.size === b.size
 
   function add(it) {
@@ -221,35 +241,37 @@ function App() {
 
   return (
     <>
-      <div className={'splash' + (products !== null && minT ? ' hide' : '')}>
+      <div className={'splash' + (products !== null && ready && minT ? ' hide' : '')}>
         <img src="/logo.jpeg" alt="ELORA" /><div className="bar"><i /></div><small>Loading your style…</small>
       </div>
       <header>
         <a href="/" className="logo"><img src="/logo.jpeg" alt="" onError={e => e.target.style.display = 'none'} />E<span>L</span>ORA</a>
         <button className="cartbtn" onClick={() => setDrawer(true)}>🛒{count > 0 && <i>{count}</i>}</button>
       </header>
-      <OfferBar offers={offers} />
+      <OfferBar offers={offs} />
       <Bg /><Butterflies />
       <div className="hero"><div className="herob"><Butterfly /></div><h1>Be Your Own <em>Queen</em></h1><p>ELORA – Elegant fashion for every moment ✨</p></div>
       <div className="wrap">
         <h2 className="t">Our Collection</h2>
         <div className="search"><span>🔍</span><input placeholder="Search dresses, tops, sarees…" value={q} onChange={e => setQ(e.target.value)} />{q && <button onClick={() => setQ('')}>✕</button>}</div>
+        <Chips cls="g" value={gender} onPick={setGender} items={[{ key: 'All', label: 'All', icon: '✨' }, { key: 'Men', label: 'Men', icon: '👔' }, { key: 'Women', label: 'Women', icon: '👗' }]} />
+        {cats.length > 0 && <Chips value={cat} onPick={setCat} items={[{ key: 'All', label: 'All Categories', icon: '🛍️' }, ...cats.map(c => ({ key: c.name, label: c.name, icon: iconOf(c.name) }))]} />}
         {products === null ? <div className="empty">Loading…</div> :
           products.length === 0 ? <div className="empty">No products yet.</div> :
-          shown.length === 0 ? <div className="empty">No products found for "{q}" 🦋</div> :
+          shown.length === 0 ? <div className="empty">No products found 🦋</div> :
           <div className="grid">{shown.map((p, i) => (
             <div className="card rise" key={p.id} style={{ animationDelay: Math.min(i, 10) * 70 + 'ms' }}>
               <div className="imgw" onClick={() => setView(p)}><img src={imgsOf(p)[0]} alt="" /><span className="tag3d">3D</span></div>
-              <div className="b"><h3>{p.name}</h3><div className="p">{money(p.price)}</div>
+              <div className="b"><h3>{p.name}</h3>{p.category && <div className="sz">{p.category}{p.gender && p.gender !== 'Unisex' ? ' • ' + p.gender : ''}</div>}<div className="p">{money(p.price)}</div>
                 {p.sizes?.length > 0 && <div className="sz">Sizes: {p.sizes.join(' • ')}</div>}
                 <button className="btn full" onClick={() => setView(p)}>View 3D & Add</button></div></div>))}</div>}
       </div>
       <footer>© ELORA • WhatsApp: 0774071805</footer>
       {view && <ProductModal p={view} onClose={() => setView(null)} onAdd={add} onBuy={it => { setView(null); setBuy(it); setCheckout(true) }} />}
-      {drawer && <Drawer lines={lines} total={total} off={dOff} onClose={() => setDrawer(false)}
+      {drawer && <Drawer lines={lines} total={total} off={dOff} ready={ready} onClose={() => setDrawer(false)}
         onQty={(l, d) => setCart(c => c.map(x => same(x, l) ? { ...x, qty: Math.max(1, x.qty + d) } : x))}
         onRemove={l => setCart(c => c.filter(x => !same(x, l)))} onCheckout={() => { setDrawer(false); setCheckout(true) }} />}
-      {checkout && <Checkout lines={chk} total={chkTotal} off={cOff} onClose={() => { setCheckout(false); setBuy(null) }} onDone={o => { setCheckout(false); if (!buy) setCart([]); setBuy(null); setDone(o) }} />}
+      {checkout && <Checkout lines={chk} total={chkTotal} off={cOff} ready={ready} onClose={() => { setCheckout(false); setBuy(null) }} onDone={o => { setCheckout(false); if (!buy) setCart([]); setBuy(null); setDone(o) }} />}
       {done && <Done order={done} onClose={() => setDone(null)} />}
       {toast && <div className="toast">{toast}</div>}
     </>
