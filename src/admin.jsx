@@ -132,8 +132,50 @@ function Offers() {
   )
 }
 
+const DEFAULT_CATS = ['Shoes', 'Perfume', 'Belts', 'Dresses', 'Tops', 'Bags', 'Watches', 'Accessories']
+function Categories() {
+  const list = useList('categories'), [name, setName] = useState(''), [busy, setBusy] = useState(false)
+  async function add(n) {
+    n = n.trim(); if (!n) return
+    if (list.some(c => c.name.toLowerCase() === n.toLowerCase())) return alert('This category already exists')
+    await setDoc(doc(collection(db, 'categories')), { name: n, createdAt: serverTimestamp() })
+  }
+  async function addOne() {
+    if (busy) return; setBusy(true)
+    try { await add(name); setName('') } catch (e) { console.error(e); alert('Could not save. Please check your Firestore rules for "categories".') }
+    setBusy(false)
+  }
+  async function addDefaults() {
+    setBusy(true)
+    try { for (const n of DEFAULT_CATS) if (!list.some(c => c.name.toLowerCase() === n.toLowerCase())) await add(n) }
+    catch (e) { console.error(e); alert('Could not save. Please check your Firestore rules for "categories".') }
+    setBusy(false)
+  }
+  return (
+    <>
+      <div className="box" style={{ margin: 0 }}>
+        <h3>Add Category</h3>
+        <label>Category name (e.g. Shoes, Perfume, Belts)</label>
+        <input value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addOne()} />
+        <button className="btn full" style={{ marginTop: 16 }} disabled={busy} onClick={addOne}>+ Add Category</button>
+        {list.length === 0 && <button className="btn o full" style={{ marginTop: 10 }} disabled={busy} onClick={addDefaults}>Add common categories</button>}
+      </div>
+      <div style={{ marginTop: 18 }}>
+        {list.length === 0 && <div className="empty">No categories yet.</div>}
+        {list.map(c => (
+          <div className="ord" key={c.id}><div className="i">
+            <b>{c.name}</b>
+            <div className="acts">
+              <button className="btn r s" onClick={() => confirm(`Delete category "${c.name}"? Products in it will not be deleted.`) && deleteDoc(doc(db, 'categories', c.id))}>Delete</button>
+            </div></div></div>))}
+      </div>
+    </>
+  )
+}
+
 function ProductForm({ p, onClose }) {
-  const [f, setF] = useState(p || { name: '', price: '', desc: '', image: '' })
+  const [f, setF] = useState(p || { name: '', price: '', desc: '', image: '', category: '', gender: 'Unisex' })
+  const cats = useList('categories')
   const set = k => e => setF({ ...f, [k]: e.target.value })
   const [sz, setSz] = useState((p?.sizes || []).join(', '))
   const [imgs, setImgs] = useState(p ? imgsOf(p) : [])
@@ -159,7 +201,7 @@ function ProductForm({ p, onClose }) {
   async function save() {
     if (lock.current) return
     if (!f.name.trim() || !Number(f.price) || !imgs.length) return alert('Name, price and at least one photo are required')
-    const data = { name: f.name.trim(), price: Number(f.price), desc: f.desc || '', image: imgs[0], images: imgs, sizes: sz.split(',').map(x => x.trim()).filter(Boolean) }
+    const data = { name: f.name.trim(), price: Number(f.price), desc: f.desc || '', category: f.category || '', gender: f.gender || 'Unisex', image: imgs[0], images: imgs, sizes: sz.split(',').map(x => x.trim()).filter(Boolean) }
     lock.current = true; setBusy(true)   // double-click guard
     try {
       if (p?.id) await updateDoc(doc(db, 'products', p.id), data)
@@ -172,6 +214,17 @@ function ProductForm({ p, onClose }) {
       <h3>{p?.id ? 'Edit' : 'Add'} Product</h3>
       <label>Product Name *</label><input value={f.name} onChange={set('name')} />
       <label>Price (Rs.) *</label><input type="number" value={f.price} onChange={set('price')} />
+      <label>Category</label>
+      <select value={f.category || ''} onChange={set('category')}>
+        <option value="">— No category —</option>
+        {cats.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+        {f.category && !cats.some(c => c.name === f.category) && <option value={f.category}>{f.category}</option>}
+      </select>
+      {cats.length === 0 && <small style={{ color: '#7a5a60' }}>Add categories first in the 🗂 Categories tab.</small>}
+      <label>For (Men / Women)</label>
+      <select value={f.gender || 'Unisex'} onChange={set('gender')}>
+        <option value="Women">Women</option><option value="Men">Men</option><option value="Unisex">Unisex (shows in both)</option>
+      </select>
       <label>Description</label><textarea rows="2" value={f.desc} onChange={set('desc')} />
       <label>Sizes (separate with commas)</label><input value={sz} onChange={e => setSz(e.target.value)} placeholder="S, M, L, XL" />
       <div className="chips">{['S, M, L, XL', 'S, M, L, XL, XXL', '28, 30, 32, 34', 'Free Size'].map(x => <button key={x} type="button" className="chip" onClick={() => setSz(x)}>{x}</button>)}</div>
@@ -186,13 +239,19 @@ function ProductForm({ p, onClose }) {
 }
 
 function Products() {
-  const list = useList('products'), [edit, setEdit] = useState(null)
+  const all = useList('products'), cats = useList('categories'), [edit, setEdit] = useState(null), [fc, setFc] = useState('All')
+  const list = fc === 'All' ? all : all.filter(p => p.category === fc)
   return (
     <>
       <button className="btn" onClick={() => setEdit({})}>+ Add New Product</button>
+      {cats.length > 0 && <div className="fbar" style={{ marginTop: 14 }}>
+        <button className={'fchip' + (fc === 'All' ? ' on' : '')} style={{ '--i': 0 }} onClick={() => setFc('All')}><span>All</span></button>
+        {cats.map((c, i) => <button key={c.id} className={'fchip' + (fc === c.name ? ' on' : '')} style={{ '--i': i + 1 }} onClick={() => setFc(c.name)}><span>{c.name}</span></button>)}
+      </div>}
       <div className="grid" style={{ marginTop: 18 }}>{list.map(p => (
         <div className="card" key={p.id}><img src={p.image} alt="" />
           <div className="b"><h3>{p.name}</h3><div className="p">{money(p.price)}</div>
+            <div className="sz">{[p.category || 'No category', p.gender || 'Unisex'].join(' • ')}</div>
             <div className="sz">{p.sizes?.length ? 'Sizes: ' + p.sizes.join(', ') : 'No sizes'}</div>
             <div className="acts"><button className="btn s" onClick={() => setEdit(p)}>Edit</button>
               <button className="btn r s" onClick={() => confirm('Delete this product?') && deleteDoc(doc(db, 'products', p.id))}>Delete</button></div></div></div>))}</div>
@@ -214,10 +273,11 @@ function App() {
           <div className="tabs">
             <button className={tab === 'O' ? 'on' : ''} onClick={() => setTab('O')}>📦 Orders</button>
             <button className={tab === 'P' ? 'on' : ''} onClick={() => setTab('P')}>👗 Products</button>
+            <button className={tab === 'C' ? 'on' : ''} onClick={() => setTab('C')}>🗂 Categories</button>
             <button className={tab === 'F' ? 'on' : ''} onClick={() => setTab('F')}>🎁 Offers</button>
             <button className={tab === 'S' ? 'on' : ''} onClick={() => setTab('S')}>⚙️ Settings</button>
           </div>
-          {tab === 'O' ? <Orders /> : tab === 'P' ? <Products /> : tab === 'F' ? <Offers /> : <Settings />}
+          {tab === 'O' ? <Orders /> : tab === 'P' ? <Products /> : tab === 'C' ? <Categories /> : tab === 'F' ? <Offers /> : <Settings />}
         </>}
       </div>
     </>
