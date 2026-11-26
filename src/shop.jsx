@@ -194,13 +194,29 @@ const Chips = ({ items, value, onPick, cls = '' }) => (
     </button>))}</div>
 )
 
-/* ---------- offers banner ---------- */
-function OfferBar({ offers }) {
+/* ---------- offer coupons (home page) ---------- */
+function OfferCards({ offers }) {
   const act = offers.filter(o => o.active !== false)
   if (!act.length) return null
-  const row = Array(4).fill(act.map(o => o.title || offerText(o))).flat()
-  const half = <span className="mqh">{row.map((t, i) => <span key={i}>🎁 {t}</span>)}</span>
-  return <div className="offers"><div className="mq">{half}{half}</div></div>
+  const rs = n => 'Rs. ' + Number(n).toLocaleString('en-LK')
+  return (
+    <section className="ocs">
+      <div className="ochead"><span>🎁</span><h2>Special Offers</h2><p>Applied automatically at checkout ✨</p></div>
+      <div className="ocgrid">{act.map((o, i) => {
+        const free = o.type === 'freeDelivery'
+        const need = [o.minQty && `Buy ${o.minQty} or more items`, o.minTotal && `Spend ${rs(o.minTotal)} or more`].filter(Boolean)
+        return (
+          <div className="cp rise" key={o.id || i} style={{ animationDelay: i * 100 + 'ms' }}>
+            <div className="cps">{free ? <><b>FREE</b><small>DELIVERY</small></> : <><b>{o.percent}%</b><small>OFF</small></>}</div>
+            <div className="cpb">
+              <div className="cpw">{free ? '🚚 Free delivery' : '🏷️ Discount'}</div>
+              <div className="cpn">{need.length ? need.join(' + ') : 'On every order'}</div>
+              {o.title && <div className="cpt">{o.title}</div>}
+            </div>
+          </div>)
+      })}</div>
+    </section>
+  )
 }
 
 /* ---------- app ---------- */
@@ -248,10 +264,10 @@ function App() {
         <a href="/" className="logo"><img src="/logo.jpeg" alt="" onError={e => e.target.style.display = 'none'} />E<span>L</span>ORA</a>
         <button className="cartbtn" onClick={() => setDrawer(true)}>🛒{count > 0 && <i>{count}</i>}</button>
       </header>
-      <OfferBar offers={offs} />
       <Bg /><Butterflies />
       <div className="hero"><div className="herob"><Butterfly /></div><h1>Be Your Own <em>Queen</em></h1><p>ELORA – Elegant fashion for every moment ✨</p></div>
       <div className="wrap">
+        <OfferCards offers={offs} />
         <h2 className="t">Our Collection</h2>
         <div className="search"><span>🔍</span><input placeholder="Search dresses, tops, sarees…" value={q} onChange={e => setQ(e.target.value)} />{q && <button onClick={() => setQ('')}>✕</button>}</div>
         <Chips cls="g" value={gender} onPick={setGender} items={[{ key: 'All', label: 'All', icon: '✨' }, { key: 'Men', label: 'Men', icon: '👔' }, { key: 'Women', label: 'Women', icon: '👗' }]} />
