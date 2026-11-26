@@ -248,3 +248,10 @@ label,.sz,.v3dctl{color:#7a5a60}
 .cpt{font-size:12px;color:var(--mute);margin-top:6px}
 @keyframes ocshine{to{background-position:-250% 0}}
 @media(prefers-reduced-motion:reduce){.cps::before,.ochead span{animation:none}}
+
+/* ===== product cards: all buttons line up at the bottom ===== */
+.grid .card{display:flex;flex-direction:column}
+.grid .card .b{flex:1;display:flex;flex-direction:column}
+.grid .card h3{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.3;min-height:2.6em}
+.grid .card .b>.btn.full{margin-top:auto}
+.grid .card .b>.acts{margin-top:auto;padding-top:8px}
