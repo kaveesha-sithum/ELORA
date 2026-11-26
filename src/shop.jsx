@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { collection, query, orderBy, onSnapshot, doc, setDoc, serverTimestamp } from 'firebase/firestore'
-import { db, money, imgsOf, makeThumb, calcOffers, offerText } from './firebase'
+import { db, money, imgsOf, thumbOf, useFullImgs, makeThumb, calcOffers, offerText } from './firebase'
 import { downloadPDF, ownerWA } from './receipt'
 import './style.css'
 
@@ -47,7 +47,7 @@ function ProductModal({ p, onClose, onAdd, onBuy }) {
   return (
     <div className="modal" onClick={onClose}><div className="box sheet" onClick={e => e.stopPropagation()}>
       <button className="x" onClick={onClose}>✕</button>
-      <Viewer3D imgs={imgsOf(p)} />
+      <Viewer3D imgs={useFullImgs(p)} />
       <h3 style={{ marginTop: 6 }}>{p.name}</h3>
       <div style={{ color: 'var(--pink2)', fontWeight: 600, fontSize: 18 }}>{money(p.price)}</div>
       {p.desc && <p style={{ fontSize: 13, color: 'var(--mute)', margin: '6px 0' }}>{p.desc}</p>}
@@ -71,7 +71,7 @@ function Drawer({ lines, total, off, ready, onClose, onQty, onRemove, onCheckout
       <div className="dbody">
         {lines.length === 0 ? <div className="empty">Your cart is empty 💖</div> : lines.map(l => (
           <div className="cl" key={l.id + l.size}>
-            <img src={imgsOf(l.p)[0]} alt="" />
+            <img src={thumbOf(l.p)} alt="" />
             <div style={{ flex: 1 }}>
               <b style={{ fontSize: 14 }}>{l.p.name}</b>
               <div className="sz">{l.size ? 'Size: ' + l.size : ''}</div>
@@ -105,7 +105,7 @@ function Checkout({ lines, total, off, ready, onClose, onDone }) {
     if (!f.name.trim() || !f.address.trim() || !f.phone1.trim() || !f.phone2.trim() || !f.town.trim()) return alert('Please fill in all required fields')
     sending.current = true; setBusy(true)
     try {
-      const items = await Promise.all(lines.map(async l => ({ id: l.id, name: l.p.name, price: Number(l.p.price), size: l.size || '', qty: l.qty, image: await makeThumb(imgsOf(l.p)[0]) })))
+      const items = await Promise.all(lines.map(async l => ({ id: l.id, name: l.p.name, price: Number(l.p.price), size: l.size || '', qty: l.qty, image: l.p.thumb || await makeThumb(imgsOf(l.p)[0]) })))
       const order = { orderNo: orderNo.current, name: f.name.trim(), address: f.address.trim(), phone1: f.phone1.trim(), phone2: f.phone2.trim(), town: f.town.trim(), note: f.note.trim(), items, subtotal: total, discount: off.discount, offers: off.applied, delivery: off.delivery, total: total - off.discount + off.delivery, status: 'Pending' }
       await setDoc(doc(db, 'orders', order.orderNo), { ...order, createdAt: serverTimestamp() })
       onDone({ ...order, date: new Date().toLocaleString() })
@@ -261,7 +261,7 @@ function App() {
           shown.length === 0 ? <div className="empty">No products found 🦋</div> :
           <div className="grid">{shown.map((p, i) => (
             <div className="card rise" key={p.id} style={{ animationDelay: Math.min(i, 10) * 70 + 'ms' }}>
-              <div className="imgw" onClick={() => setView(p)}><img src={imgsOf(p)[0]} alt="" /><span className="tag3d">3D</span></div>
+              <div className="imgw" onClick={() => setView(p)}><img src={thumbOf(p)} alt="" loading="lazy" /><span className="tag3d">3D</span></div>
               <div className="b"><h3>{p.name}</h3>{p.category && <div className="sz">{p.category}{p.gender && p.gender !== 'Unisex' ? ' • ' + p.gender : ''}</div>}<div className="p">{money(p.price)}</div>
                 {p.sizes?.length > 0 && <div className="sz">Sizes: {p.sizes.join(' • ')}</div>}
                 <button className="btn full" onClick={() => setView(p)}>View 3D & Add</button></div></div>))}</div>}
