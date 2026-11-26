@@ -1,16 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { collection, query, orderBy, onSnapshot, addDoc, setDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore'
+import { collection, query, orderBy, limit, onSnapshot, addDoc, setDoc, getDoc, getDocs, writeBatch, deleteField, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore'
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
-import { db, auth, money, imgsOf, itemsOf, offerText } from './firebase'
+import { db, auth, money, imgsOf, thumbOf, makeThumb, itemsOf, offerText } from './firebase'
 import { downloadPDF } from './receipt'
 import './style.css'
 
 const STATUS = ['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled']
-const useList = (name) => {
+const useList = (name, max = 0) => {
   const [l, setL] = useState([])
-  useEffect(() => onSnapshot(query(collection(db, name), orderBy('createdAt', 'desc')),
-    s => setL(s.docs.map(d => ({ id: d.id, ...d.data() }))), console.error), [])
+  useEffect(() => onSnapshot(query(collection(db, name), orderBy('createdAt', 'desc'), ...(max ? [limit(max)] : [])),
+    s => setL(s.docs.map(d => ({ id: d.id, ...d.data() }))), console.error), [max])
   return l
 }
 
@@ -28,14 +28,14 @@ function Login() {
 }
 
 function Orders() {
-  const orders = useList('orders')
+  const [max, setMax] = useState(30), orders = useList('orders', max)
   const date = o => o.createdAt ? o.createdAt.toDate().toLocaleString() : ''
   const wa = o => {
     let n = o.phone1.replace(/\D/g, ''); if (n.startsWith('0')) n = '94' + n.slice(1)
     window.open(`https://wa.me/${n}?text=${encodeURIComponent(`Hello ${o.name}, your ELORA order ${o.orderNo} is now ${o.status}. Thank you! 💖`)}`, '_blank')
   }
   if (!orders.length) return <div className="empty">No orders yet.</div>
-  return orders.map(o => (
+  return <>{orders.map(o => (
     <div className="ord" key={o.id}>
       <div className="i">
         <b>{o.orderNo}</b> <span className="badge">{o.status}</span><br />
@@ -55,7 +55,8 @@ function Orders() {
           <button className="btn o s" onClick={() => downloadPDF({ ...o, date: date(o) })}>PDF</button>
           <button className="btn r s" onClick={() => confirm('Delete this order?') && deleteDoc(doc(db, 'orders', o.id))}>Delete</button>
         </div>
-      </div></div>))
+      </div></div>))}
+    {orders.length >= max && <button className="btn o full" onClick={() => setMax(m => m + 30)}>Load older orders</button>}</>
 }
 
 function Settings() {
@@ -179,6 +180,9 @@ function ProductForm({ p, onClose }) {
   const set = k => e => setF({ ...f, [k]: e.target.value })
   const [sz, setSz] = useState((p?.sizes || []).join(', '))
   const [imgs, setImgs] = useState(p ? imgsOf(p) : [])
+  useEffect(() => { // new-style product: full photos live in productImages/{id}
+    if (p?.id && !(p.images && p.images.length)) getDoc(doc(db, 'productImages', p.id)).then(s => { const l = s.data()?.images; if (l?.length) setImgs(l) }).catch(console.error)
+  }, [])
   function pick(e) { // up to 4 photos, compressed and stored as base64
     const files = [...e.target.files].slice(0, 4 - imgs.length)
     files.forEach(file => {
@@ -201,11 +205,14 @@ function ProductForm({ p, onClose }) {
   async function save() {
     if (lock.current) return
     if (!f.name.trim() || !Number(f.price) || !imgs.length) return alert('Name, price and at least one photo are required')
-    const data = { name: f.name.trim(), price: Number(f.price), desc: f.desc || '', category: f.category || '', gender: f.gender || 'Unisex', image: imgs[0], images: imgs, sizes: sz.split(',').map(x => x.trim()).filter(Boolean) }
     lock.current = true; setBusy(true)   // double-click guard
     try {
-      if (p?.id) await updateDoc(doc(db, 'products', p.id), data)
-      else await setDoc(doc(db, 'products', newId.current), { ...data, createdAt: serverTimestamp() })
+      const id = p?.id || newId.current, thumb = await makeThumb(imgs[0], 320)
+      // list doc stays tiny (thumb only); full photos go to a separate doc that is read only when needed
+      const data = { name: f.name.trim(), price: Number(f.price), desc: f.desc || '', category: f.category || '', gender: f.gender || 'Unisex', thumb, imageCount: imgs.length, sizes: sz.split(',').map(x => x.trim()).filter(Boolean), image: deleteField(), images: deleteField() }
+      await setDoc(doc(db, 'productImages', id), { images: imgs })
+      if (p?.id) await updateDoc(doc(db, 'products', id), data)
+      else { const { image, images, ...rest } = data; await setDoc(doc(db, 'products', id), { ...rest, createdAt: serverTimestamp() }) }
       onClose()
     } catch (e) { console.error(e); lock.current = false; setBusy(false); alert('Could not save the product. Please try again.') }
   }
@@ -238,23 +245,42 @@ function ProductForm({ p, onClose }) {
   )
 }
 
+function Optimize({ all }) {
+  const old = all.filter(p => p.images && p.images.length), [busy, setBusy] = useState(''), 
+  run = async () => {
+    try {
+      for (let i = 0; i < old.length; i++) {
+        const p = old[i]; setBusy(`Optimizing ${i + 1}/${old.length}…`)
+        const imgs = imgsOf(p), thumb = await makeThumb(imgs[0], 320)
+        await setDoc(doc(db, 'productImages', p.id), { images: imgs })
+        await updateDoc(doc(db, 'products', p.id), { thumb, imageCount: imgs.length, image: deleteField(), images: deleteField() })
+      }
+      setBusy('')
+    } catch (e) { console.error(e); setBusy(''); alert('Failed. Please check your Firestore rules for "productImages".') }
+  }
+  if (!old.length) return null
+  return <div className="box" style={{ margin: '0 0 14px' }}><b>{old.length} old product(s) are slow</b><br /><small>Moves their big photos out of the list so the page loads fast. Run once.</small>
+    <button className="btn full" style={{ marginTop: 10 }} disabled={!!busy} onClick={run}>{busy || 'Speed up now'}</button></div>
+}
+
 function Products() {
   const all = useList('products'), cats = useList('categories'), [edit, setEdit] = useState(null), [fc, setFc] = useState('All')
   const list = fc === 'All' ? all : all.filter(p => p.category === fc)
   return (
     <>
+      <Optimize all={all} />
       <button className="btn" onClick={() => setEdit({})}>+ Add New Product</button>
       {cats.length > 0 && <div className="fbar" style={{ marginTop: 14 }}>
         <button className={'fchip' + (fc === 'All' ? ' on' : '')} style={{ '--i': 0 }} onClick={() => setFc('All')}><span>All</span></button>
         {cats.map((c, i) => <button key={c.id} className={'fchip' + (fc === c.name ? ' on' : '')} style={{ '--i': i + 1 }} onClick={() => setFc(c.name)}><span>{c.name}</span></button>)}
       </div>}
       <div className="grid" style={{ marginTop: 18 }}>{list.map(p => (
-        <div className="card" key={p.id}><img src={p.image} alt="" />
+        <div className="card" key={p.id}><img src={thumbOf(p)} alt="" loading="lazy" />
           <div className="b"><h3>{p.name}</h3><div className="p">{money(p.price)}</div>
             <div className="sz">{[p.category || 'No category', p.gender || 'Unisex'].join(' • ')}</div>
             <div className="sz">{p.sizes?.length ? 'Sizes: ' + p.sizes.join(', ') : 'No sizes'}</div>
             <div className="acts"><button className="btn s" onClick={() => setEdit(p)}>Edit</button>
-              <button className="btn r s" onClick={() => confirm('Delete this product?') && deleteDoc(doc(db, 'products', p.id))}>Delete</button></div></div></div>))}</div>
+              <button className="btn r s" onClick={() => confirm('Delete this product?') && Promise.all([deleteDoc(doc(db, 'products', p.id)), deleteDoc(doc(db, 'productImages', p.id))])}>Delete</button></div></div></div>))}</div>
       {edit && <ProductForm p={edit.id ? edit : null} onClose={() => setEdit(null)} />}
     </>
   )
