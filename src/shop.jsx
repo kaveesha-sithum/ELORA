@@ -94,19 +94,20 @@ function Drawer({ lines, total, off, ready, onClose, onQty, onRemove, onCheckout
 }
 
 /* ---------- checkout ---------- */
-const blank = { name: '', address: '', phone1: '', phone2: '', town: '', note: '' }
-function Checkout({ lines, total, off, ready, onClose, onDone }) {
+const blank = { name: '', address: '', phone1: '', phone2: '', town: '', note: '', gift: false, giftMsg: '' }
+function Checkout({ lines, total, off, ready, giftPrice, onClose, onDone }) {
   const [f, setF] = useState(blank), [busy, setBusy] = useState(false)
   const sending = useRef(false)
   const orderNo = useRef('ELR-' + Date.now().toString().slice(-8) + Math.floor(Math.random() * 90 + 10))
   const set = k => e => setF({ ...f, [k]: e.target.value })
+  const fee = f.gift ? giftPrice : 0, grand = total - off.discount + off.delivery + fee
   async function submit() {
     if (sending.current || !ready) return
     if (!f.name.trim() || !f.address.trim() || !f.phone1.trim() || !f.phone2.trim() || !f.town.trim()) return alert('Please fill in all required fields')
     sending.current = true; setBusy(true)
     try {
       const items = await Promise.all(lines.map(async l => ({ id: l.id, name: l.p.name, price: Number(l.p.price), size: l.size || '', qty: l.qty, image: l.p.thumb || await makeThumb(imgsOf(l.p)[0]) })))
-      const order = { orderNo: orderNo.current, name: f.name.trim(), address: f.address.trim(), phone1: f.phone1.trim(), phone2: f.phone2.trim(), town: f.town.trim(), note: f.note.trim(), items, subtotal: total, discount: off.discount, offers: off.applied, delivery: off.delivery, total: total - off.discount + off.delivery, status: 'Pending' }
+      const order = { orderNo: orderNo.current, name: f.name.trim(), address: f.address.trim(), phone1: f.phone1.trim(), phone2: f.phone2.trim(), town: f.town.trim(), note: f.note.trim(), giftBox: f.gift, giftFee: fee, giftMsg: f.gift ? f.giftMsg.trim() : '', items, subtotal: total, discount: off.discount, offers: off.applied, delivery: off.delivery, total: grand, status: 'Pending' }
       await setDoc(doc(db, 'orders', order.orderNo), { ...order, createdAt: serverTimestamp() })
       onDone({ ...order, date: new Date().toLocaleString() })
     } catch (e) { console.error(e); alert('Could not place your order. Please try again.'); sending.current = false; setBusy(false) }
@@ -118,7 +119,8 @@ function Checkout({ lines, total, off, ready, onClose, onDone }) {
         <div><span>Subtotal</span><span>{money(total)}</span></div>
         {off.discount > 0 && <div><span>Discount</span><span>- {money(off.discount)}</span></div>}
         <div><span>Delivery</span><span>{!ready ? '…' : off.delivery === 0 ? 'FREE 🎉' : money(off.delivery)}</span></div>
-        <div className="tot"><span>Total</span><b>{ready ? money(total - off.discount + off.delivery) : '…'}</b></div></div>
+        {f.gift && <div><span>🎁 Gift box</span><span>{fee === 0 ? 'FREE' : money(fee)}</span></div>}
+        <div className="tot"><span>Total</span><b>{ready ? money(grand) : '…'}</b></div></div>
       <label>Full Name *</label><input value={f.name} onChange={set('name')} />
       <label>Address *</label><textarea rows="2" value={f.address} onChange={set('address')} />
       <div className="row">
@@ -127,6 +129,12 @@ function Checkout({ lines, total, off, ready, onClose, onDone }) {
       </div>
       <label>Nearest Town *</label><input value={f.town} onChange={set('town')} />
       <label>Notes (optional)</label><input value={f.note} onChange={set('note')} />
+      <label className={'gift' + (f.gift ? ' on' : '')}>
+        <input type="checkbox" checked={f.gift} onChange={e => setF({ ...f, gift: e.target.checked })} />
+        <span className="ck">✓</span>
+        <span className="gt">🎁 Pack this order in a gift box <em className="gp">{giftPrice > 0 ? '+ ' + money(giftPrice) : 'FREE'}</em><small>We'll wrap it beautifully for you</small></span>
+      </label>
+      {f.gift && <input style={{ marginTop: 8 }} maxLength={120} placeholder="Gift message (optional) – e.g. Happy Birthday!" value={f.giftMsg} onChange={set('giftMsg')} />}
       <div className="row" style={{ marginTop: 18 }}>
         <button className="btn o" onClick={onClose}>Back</button>
         <button className="btn" disabled={busy || !ready} onClick={submit}>{busy ? 'Please wait…' : 'Confirm Order'}</button>
@@ -225,18 +233,18 @@ function App() {
   const [cart, setCart] = useState(() => { try { return JSON.parse(localStorage.getItem('elora_cart')) || [] } catch { return [] } })
   const [view, setView] = useState(null), [drawer, setDrawer] = useState(false), [checkout, setCheckout] = useState(false)
   const [done, setDone] = useState(null), [toast, setToast] = useState('')
-  const [buy, setBuy] = useState(null), [q, setQ] = useState(''), [delivery, setDelivery] = useState(() => readCache('elora_delivery')), [offers, setOffers] = useState(() => readCache('elora_offers'))
+  const [buy, setBuy] = useState(null), [q, setQ] = useState(''), [delivery, setDelivery] = useState(() => readCache('elora_delivery')), [offers, setOffers] = useState(() => readCache('elora_offers')), [giftPrice, setGiftPrice] = useState(() => readCache('elora_gift'))
   const [cats, setCats] = useState([]), [gender, setGender] = useState('All'), [cat, setCat] = useState('All')
 
   useEffect(() => { const t = setTimeout(() => setMinT(true), 1500); return () => clearTimeout(t) }, [])
-  useEffect(() => onSnapshot(doc(db, 'settings', 'shop'), s => { const v = Number(s.data()?.delivery); const d = s.exists() && Number.isFinite(v) ? v : 450; setDelivery(d); writeCache('elora_delivery', d) }, () => setDelivery(d => d ?? 450)), [])
+  useEffect(() => onSnapshot(doc(db, 'settings', 'shop'), s => { const v = Number(s.data()?.delivery); const d = s.exists() && Number.isFinite(v) ? v : 450; setDelivery(d); writeCache('elora_delivery', d); const g = Number(s.data()?.giftPrice), gp = Number.isFinite(g) && g >= 0 ? g : 0; setGiftPrice(gp); writeCache('elora_gift', gp) }, () => { setDelivery(d => d ?? 450); setGiftPrice(g => g ?? 0) }), [])
   useEffect(() => onSnapshot(collection(db, 'offers'), s => { const l = s.docs.map(d => { const { createdAt, ...r } = d.data(); return { id: d.id, ...r } }); setOffers(l); writeCache('elora_offers', l) }, () => setOffers(o => o ?? [])), [])
   useEffect(() => onSnapshot(collection(db, 'categories'), s => setCats(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0))), () => {}), [])
   useEffect(() => { try { localStorage.setItem('elora_cart', JSON.stringify(cart)) } catch {} }, [cart])
   useEffect(() => onSnapshot(query(collection(db, 'products'), orderBy('createdAt', 'desc')),
     s => setProducts(s.docs.map(d => ({ id: d.id, ...d.data() }))), e => { console.error(e); setProducts([]) }), [])
 
-  const ready = delivery !== null && offers !== null
+  const ready = delivery !== null && offers !== null && giftPrice !== null
   const offs = offers || [], dlv = delivery ?? 450
   const lines = cart.map(c => ({ ...c, p: (products || []).find(x => x.id === c.id) })).filter(l => l.p)
   const total = lines.reduce((s, l) => s + l.p.price * l.qty, 0), count = lines.reduce((s, l) => s + l.qty, 0)
@@ -287,7 +295,7 @@ function App() {
       {drawer && <Drawer lines={lines} total={total} off={dOff} ready={ready} onClose={() => setDrawer(false)}
         onQty={(l, d) => setCart(c => c.map(x => same(x, l) ? { ...x, qty: Math.max(1, x.qty + d) } : x))}
         onRemove={l => setCart(c => c.filter(x => !same(x, l)))} onCheckout={() => { setDrawer(false); setCheckout(true) }} />}
-      {checkout && <Checkout lines={chk} total={chkTotal} off={cOff} ready={ready} onClose={() => { setCheckout(false); setBuy(null) }} onDone={o => { setCheckout(false); if (!buy) setCart([]); setBuy(null); setDone(o) }} />}
+      {checkout && <Checkout lines={chk} total={chkTotal} off={cOff} ready={ready} giftPrice={giftPrice ?? 0} onClose={() => { setCheckout(false); setBuy(null) }} onDone={o => { setCheckout(false); if (!buy) setCart([]); setBuy(null); setDone(o) }} />}
       {done && <Done order={done} onClose={() => setDone(null)} />}
       {toast && <div className="toast">{toast}</div>}
     </>
