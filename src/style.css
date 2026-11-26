@@ -224,3 +224,27 @@ label,.sz,.v3dctl{color:#7a5a60}
   .fbar.g .fchip{flex:1 1 0;justify-content:center;padding:10px 8px}
 }
 @media(prefers-reduced-motion:reduce){.fchip,.fchip.on,.fchip.on .ic{animation:none;opacity:1}.fchip::after{display:none}}
+
+/* ===== offer coupons (home) ===== */
+.ocs{margin-bottom:38px}
+.ochead{text-align:center;margin-bottom:20px}
+.ochead span{font-size:30px;display:block;animation:bfloat 3s ease-in-out infinite}
+.ochead h2{font:700 28px 'Playfair Display',serif;color:#f8dede}
+.ochead p{font-size:13px;color:var(--mute);margin-top:4px}
+.ocgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
+.cp{display:flex;min-height:110px;border-radius:16px;background:linear-gradient(135deg,#2a1218,#1a1114);
+  -webkit-mask:radial-gradient(circle 10px at 112px 0,#0000 98%,#000) top/100% 51% no-repeat,radial-gradient(circle 10px at 112px 100%,#0000 98%,#000) bottom/100% 51% no-repeat;
+  mask:radial-gradient(circle 10px at 112px 0,#0000 98%,#000) top/100% 51% no-repeat,radial-gradient(circle 10px at 112px 100%,#0000 98%,#000) bottom/100% 51% no-repeat;
+  transition:transform .25s}
+.cp:hover{transform:translateY(-3px)}
+.cps{flex:none;width:112px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:#2b0f17;
+  background:linear-gradient(160deg,#ffc2cf,#ff8fa6 60%,#ff7a96);border-radius:16px 0 0 16px;position:relative;overflow:hidden}
+.cps::before{content:"";position:absolute;inset:0;background:linear-gradient(115deg,transparent 35%,rgba(255,255,255,.45) 50%,transparent 65%);background-size:250% 100%;animation:ocshine 3.5s linear infinite}
+.cps b{font:700 28px 'Playfair Display',serif;line-height:1;position:relative}
+.cps small{font:600 11px Poppins;letter-spacing:2px;margin-top:5px;position:relative}
+.cpb{flex:1;padding:16px 18px;border-left:2px dashed rgba(255,194,207,.45);display:flex;flex-direction:column;justify-content:center;min-width:0}
+.cpw{font:600 12px Poppins;color:var(--pink);letter-spacing:.5px;text-transform:uppercase}
+.cpn{font:500 16px Poppins;color:#fff;margin-top:5px;line-height:1.35}
+.cpt{font-size:12px;color:var(--mute);margin-top:6px}
+@keyframes ocshine{to{background-position:-250% 0}}
+@media(prefers-reduced-motion:reduce){.cps::before,.ochead span{animation:none}}
