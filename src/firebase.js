@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app'
-import { getFirestore } from 'firebase/firestore'
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc } from 'firebase/firestore'
+import { useEffect, useState } from 'react'
 import { getAuth } from 'firebase/auth'
 
 const firebaseConfig = {
@@ -13,12 +14,27 @@ const firebaseConfig = {
 }
 export const WA = '94774071805' // 0774071805
 const app = initializeApp(firebaseConfig)
-export const db = getFirestore(app)
+// local cache (IndexedDB): 2nd visit onwards data shows instantly
+export const db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) })
 export const auth = getAuth(app)
 export const money = n => 'Rs. ' + Number(n).toLocaleString('en-LK')
 
 // ---- helpers ----
 export const imgsOf = p => (p.images && p.images.length ? p.images : [p.image].filter(Boolean))
+// small preview used in lists / cart / orders (new products have p.thumb; old ones fall back to the full image)
+export const thumbOf = p => p.thumb || imgsOf(p)[0] || ''
+// full-size photos: new products keep them in 'productImages/{id}' and are loaded only when needed
+export function useFullImgs(p) {
+  const old = p.images && p.images.length ? p.images : null
+  const [imgs, setImgs] = useState(old || [thumbOf(p)].filter(Boolean))
+  useEffect(() => {
+    if (old) { setImgs(old); return }
+    let live = true
+    getDoc(doc(db, 'productImages', p.id)).then(s => { const l = s.data()?.images; if (live && l?.length) setImgs(l) }).catch(console.error)
+    return () => { live = false }
+  }, [p.id])
+  return imgs
+}
 export const itemsOf = o => o.items || [{ name: o.productName, price: o.price, qty: o.qty, size: o.size || '', image: o.image }]
 export const makeThumb = (src, s = 180) => new Promise(r => {
   const im = new Image()
