@@ -45,6 +45,7 @@ function Orders() {
           <div className="it" key={i}><img src={it.image} alt="" />
             <div><b>{it.name}</b><br />{it.size && `Size: ${it.size} • `}Qty: {it.qty} • {money(it.price)}</div></div>))}</div>
         {o.note && <><b>Note:</b> {o.note}<br /></>}
+        {o.giftBox && <div className="giftbadge">🎁 GIFT BOX{o.giftFee > 0 ? ` (+ ${money(o.giftFee)})` : ''}{o.giftMsg ? ` – “${o.giftMsg}”` : ''}</div>}
         {o.discount > 0 && <><b>Discount:</b> - {money(o.discount)}{o.offers?.length ? ` (${o.offers.join(', ')})` : ''}<br /></>}
         {o.delivery != null && <><b>Delivery:</b> {o.delivery === 0 ? 'FREE' : money(o.delivery)}<br /></>}
         <b>Total:</b> {money(o.total)}<br /><small style={{ color: 'var(--mute)' }}>{date(o)}</small>
@@ -60,21 +61,25 @@ function Orders() {
 }
 
 function Settings() {
-  const [d, setD] = useState(''), [saved, setSaved] = useState(false)
-  useEffect(() => onSnapshot(doc(db, 'settings', 'shop'), s => { const v = s.data()?.delivery; setD(v != null ? String(v) : '450') }, () => setD('450')), [])
+  const [d, setD] = useState(''), [g, setG] = useState(''), [saved, setSaved] = useState(false)
+  useEffect(() => onSnapshot(doc(db, 'settings', 'shop'), s => { const v = s.data()?.delivery, w = s.data()?.giftPrice; setD(v != null ? String(v) : '450'); setG(w != null ? String(w) : '0') }, () => { setD('450'); setG('0') }), [])
   async function save() {
-    const n = Number(d)
+    const n = Number(d), m = Number(g)
     if (d === '' || !(n >= 0)) return alert('Enter a valid delivery charge')
-    try { await setDoc(doc(db, 'settings', 'shop'), { delivery: n }, { merge: true }); setSaved(true); setTimeout(() => setSaved(false), 2000) }
+    if (g === '' || !(m >= 0)) return alert('Enter a valid gift box price (0 = free)')
+    try { await setDoc(doc(db, 'settings', 'shop'), { delivery: n, giftPrice: m }, { merge: true }); setSaved(true); setTimeout(() => setSaved(false), 2000) }
     catch (e) { console.error(e); alert('Could not save. Please check your Firestore rules for "settings".') }
   }
   return (
     <div className="box" style={{ margin: 0 }}>
-      <h3>Delivery Charge</h3>
+      <h3>Shop Settings</h3>
       <label>Delivery charge per order (Rs.)</label>
       <input type="number" min="0" value={d} onChange={e => setD(e.target.value)} />
+      <label>🎁 Gift box price (Rs.) — enter 0 for free</label>
+      <input type="number" min="0" value={g} onChange={e => setG(e.target.value)} />
+      <small style={{ color: '#7a5a60' }}>Added once per order when the customer ticks "gift box". Stays the same until you change it here.</small>
       <button className="btn full" style={{ marginTop: 16 }} onClick={save}>Save</button>
-      {saved && <p style={{ marginTop: 10, color: '#2e7d32' }}>✓ Saved. The shop now uses this charge.</p>}
+      {saved && <p style={{ marginTop: 10, color: '#2e7d32' }}>✓ Saved. The shop now uses these prices.</p>}
     </div>
   )
 }
